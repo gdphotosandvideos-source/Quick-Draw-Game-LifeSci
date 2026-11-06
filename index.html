@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sketchpad Widget for Tally</title>
+<style>
+body {
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+margin: 0;
+padding: 15px;
+background-color: transparent;
+}
+.canvas-container {
+position: relative;
+width: 100%;
+max-width: 500px;
+background: #ffffff;
+border: 2px solid #e2e8f0;
+border-radius: 12px;
+box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+overflow: hidden;
+}
+canvas {
+display: block;
+width: 100%;
+height: 320px;
+background: #ffffff;
+cursor: crosshair;
+touch-action: none;
+}
+.controls {
+display: flex;
+gap: 10px;
+padding: 12px;
+background: #f8fafc;
+border-top: 1px solid #e2e8f0;
+}
+button {
+flex: 1;
+padding: 10px 16px;
+font-size: 14px;
+font-weight: 600;
+border: none;
+border-radius: 6px;
+cursor: pointer;
+transition: all 0.2s ease;
+}
+.btn-clear {
+background-color: #ef4444;
+color: white;
+}
+.btn-clear:hover { background-color: #dc2626; }
+.btn-save {
+background-color: #4f46e5;
+color: white;
+}
+.btn-save:hover { background-color: #4338ca; }
+.status-msg {
+margin-top: 8px;
+font-size: 13px;
+color: #64748b;
+font-weight: 500;
+text-align: center;
+min-height: 20px;
+}
+</style>
+</head>
+<body>
+
+<div class="canvas-container">
+<canvas id="sketchpad"></canvas>
+<div class="controls">
+<button class="btn-clear" onclick="clearCanvas()">Clear Canvas</button>
+<button class="btn-save" onclick="sendToTally()">Lock In Doodle</button>
+</div>
+</div>
+<div id="status" class="status-msg">Draw your doodle above!</div>
+
+<script>
+const canvas = document.getElementById('sketchpad');
+const ctx = canvas.getContext('2d');
+const statusText = document.getElementById('status');
+let drawing = false;
+
+// Auto-resize canvas memory resolution matching its display sizing
+function resizeCanvas() {
+canvas.width = canvas.offsetWidth;
+canvas.height = canvas.offsetHeight;
+clearCanvas();
+}
+
+// Setup clear line styles
+function initStrokeStyles() {
+ctx.lineWidth = 4;
+ctx.lineCap = 'round';
+ctx.lineJoin = 'round';
+ctx.strokeStyle = '#1e293b';
+}
+
+function getCoordinates(e) {
+const rect = canvas.getBoundingClientRect();
+const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+return {
+x: clientX - rect.left,
+y: clientY - rect.top
+};
+}
+
+function startDrawing(e) {
+drawing = true;
+initStrokeStyles();
+const coords = getCoordinates(e);
+ctx.beginPath();
+ctx.moveTo(coords.x, coords.y);
+statusText.innerText = "Drawing...";
+statusText.style.color = "#64748b";
+}
+
+function draw(e) {
+if (!drawing) return;
+e.preventDefault();
+const coords = getCoordinates(e);
+ctx.lineTo(coords.x, coords.y);
+ctx.stroke();
+}
+
+function stopDrawing() {
+if (!drawing) return;
+drawing = false;
+ctx.beginPath();
+}
+
+// Event Handling for Desktop & Mobile devices
+canvas.addEventListener('mousedown', startDrawing);
+canvas.addEventListener('mousemove', draw);
+window.addEventListener('mouseup', stopDrawing);
+
+canvas.addEventListener('touchstart', startDrawing);
+canvas.addEventListener('touchmove', draw, { passive: false });
+window.addEventListener('touchend', stopDrawing);
+
+function clearCanvas() {
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+statusText.innerText = "Canvas cleared.";
+statusText.style.color = "#64748b";
+}
+
+function sendToTally() {
+// Check if canvas is completely blank before saving
+const blank = document.createElement('canvas');
+blank.width = canvas.width;
+blank.height = canvas.height;
+if (canvas.toDataURL() === blank.toDataURL()) {
+statusText.innerText = "❌ Canvas is empty! Draw something first.";
+statusText.style.color = "#ef4444";
+return;
+}
+
+// Convert raw drawing to standard image URL data string
+const drawingDataString = canvas.toDataURL('image/png');
+
+try {
+// Post communication message upstream targeting parent Tally window frame safely
+window.parent.postMessage(
+{
+type: 'tally:set-hidden-field',
+name: 'drawingData',
+value: drawingDataString
+},
+'*'
+);
+statusText.innerText = "✅ Drawing saved! Continue filling your form below.";
+statusText.style.color = "#22c55e";
+} catch (err) {
+statusText.innerText = "⚠️ Errored transferring data to parent form.";
+statusText.style.color = "#f59e0b";
+}
+}
+
+// Initialize sizing constraints right away
+window.addEventListener('load', resizeCanvas);
+window.addEventListener('resize', () => {
+// Keep drawing contents when screen rotates/scales
+const tempImage = canvas.toDataURL();
+canvas.width = canvas.offsetWidth;
+canvas.height = canvas.offsetHeight;
+initStrokeStyles();
+const img = new Image();
+img.onload = () => ctx.drawImage(img, 0, 0);
+img.src = tempImage;
+});
+</script>
+</body>
+</html>
